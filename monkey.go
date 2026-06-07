@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"bufio"
 	"fmt"
 	"math/rand"
@@ -8,6 +9,12 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed ape.md
+var frame1 string
+
+//go:embed apetype.md
+var frame2 string
 
 // ANSI escape codes
 const (
@@ -369,43 +376,7 @@ var ideas = []string{
 	"a web app for coordinating a book club reading schedule",
 }
 
-// Frames for the monkey animation
-var monkeyFrames = []string{
-	`
-  .-"  "-.
- /  o  o  \
-|    __    |
-|   (__) @ |
- \        /
-  '------'
-  ||    ||`,
-	`
-  .-"  "-.
- /  ^  ^  \
-|    __    |
-|   (__) @ |
- \        /
-  '------'
-  ||    ||`,
-	`
-  .-"  "-.
- /  o  -  \
-|    __    |
-|   (__) @ |
- \        /
-  '------'
-  ||    ||`,
-	`
-  .-"  "-.
- /  -  o  \
-|    __    |
-|   (__) @ |
- \        /
-  '------'
-  ||    ||`,
-}
-
-var typingFrames = []string{"⌨", "⌨ ", "⌨  "}
+var monkeyFrames = []string{frame1, frame2}
 
 var charset = "abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz    !!??--"
 
@@ -421,101 +392,53 @@ func clearLine() string {
 	return "\033[2K"
 }
 
+func drawFrame(frame string, typingLine string) {
+	fmt.Print("\033[H")
+	fmt.Printf("%s THE INFINITE MONKEY%s\r\n", bold+yellow, reset)
+	fmt.Printf("%s--------------------------------------------------%s\r\n", gray, reset)
+	for _, line := range strings.Split(frame, "\n") {
+		fmt.Printf("%s%s%s\r\n", yellow, line, reset)
+	}
+	fmt.Printf("\r\n%s Typing:%s\r\n", gray, reset)
+	fmt.Printf("  %s\r\n", typingLine)
+}
+
 func animateTyping(target string) {
 	fmt.Print(hideCursor)
-
-	monkeyRow := 3
-	typeRow := 13
-
-	// Draw static monkey
 	fmt.Print(clearScreen)
-	fmt.Print(moveCursor(1, 1))
-	fmt.Printf("%s%s THE INFINITE MONKEY%s\n", bold+yellow, "🐒", reset)
-	fmt.Print(moveCursor(2, 1))
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", gray, reset)
-
-	// Draw monkey
-	lines := strings.Split(monkeyFrames[0], "\n")
-	for i, line := range lines {
-		if line == "" {
-			continue
-		}
-		fmt.Print(moveCursor(monkeyRow+i, 4))
-		fmt.Printf("%s%s%s", yellow, line, reset)
-	}
-
-	fmt.Print(moveCursor(typeRow, 1))
-	fmt.Printf("%s📝 Typing:%s\n", gray, reset)
 
 	// Phase 1: chaotic random typing
 	displayed := ""
 	chaosDuration := len(target)*2 + rand.Intn(len(target))
 	for i := 0; i < chaosDuration; i++ {
-		// Occasionally "correct" a character
 		if len(displayed) > 0 && rand.Float32() < 0.15 {
-			// backspace - remove last char
 			displayed = displayed[:len(displayed)-1]
-			if len(displayed) > 40 {
-				displayed = displayed[len(displayed)-40:]
-			}
 		} else {
 			displayed += randomChar()
 			if len(displayed) > 50 {
 				displayed = displayed[len(displayed)-50:]
 			}
 		}
-
-		// Animate monkey
-		frame := monkeyFrames[i%len(monkeyFrames)]
-		frameLines := strings.Split(frame, "\n")
-		for j, line := range frameLines {
-			if line == "" {
-				continue
-			}
-			fmt.Print(moveCursor(monkeyRow+j, 4))
-			fmt.Print(clearLine())
-			fmt.Printf("%s%s%s", yellow, line, reset)
-		}
-
-		fmt.Print(moveCursor(typeRow+1, 1))
-		fmt.Print(clearLine())
-		fmt.Printf("  %s%s%s%s_", dim+gray, displayed, reset, cyan)
-		fmt.Print(moveCursor(typeRow+2, 1))
-
-		delay := time.Duration(20+rand.Intn(60)) * time.Millisecond
-		time.Sleep(delay)
+		drawFrame(monkeyFrames[i%2], fmt.Sprintf("%s%s%s%s_", dim+gray, displayed, reset, cyan))
+		time.Sleep(time.Duration(20+rand.Intn(60)) * time.Millisecond)
 	}
 
-	// Phase 2: erase and type the real suggestion
-	fmt.Print(moveCursor(typeRow+1, 1))
-	fmt.Print(clearLine())
-
-	// Clear animation
-	time.Sleep(200 * time.Millisecond)
-
-	// Now type the actual idea
+	// Phase 2: type the actual idea with occasional typos
 	realTyped := ""
-	for _, ch := range target {
-		// Occasionally make a typo and correct it
+	for k, ch := range target {
 		if rand.Float32() < 0.08 && len(realTyped) > 0 {
-			typo := randomChar()
-			fmt.Print(moveCursor(typeRow+1, 1))
-			fmt.Print(clearLine())
-			preview := realTyped + typo
+			preview := realTyped + randomChar()
 			if len(preview) > 55 {
 				preview = "..." + preview[len(preview)-52:]
 			}
-			fmt.Printf("  %s%s%s%s_", white, preview, reset, cyan)
+			drawFrame(monkeyFrames[k%2], fmt.Sprintf("%s%s%s_", white, preview, reset))
 			time.Sleep(80 * time.Millisecond)
 
-			// Backspace
-			fmt.Print(moveCursor(typeRow+1, 1))
-			fmt.Print(clearLine())
 			disp := realTyped
 			if len(disp) > 55 {
 				disp = "..." + disp[len(disp)-52:]
 			}
-			fmt.Printf("  %s%s%s%s_", white, disp, reset, cyan)
+			drawFrame(monkeyFrames[k%2], fmt.Sprintf("%s%s%s_", white, disp, reset))
 			time.Sleep(60 * time.Millisecond)
 		}
 
@@ -524,62 +447,30 @@ func animateTyping(target string) {
 		if len(disp) > 55 {
 			disp = "..." + disp[len(disp)-52:]
 		}
-
-		// Monkey still animating
-		frame := monkeyFrames[len(realTyped)%len(monkeyFrames)]
-		frameLines := strings.Split(frame, "\n")
-		for j, line := range frameLines {
-			if line == "" {
-				continue
-			}
-			fmt.Print(moveCursor(monkeyRow+j, 4))
-			fmt.Print(clearLine())
-			fmt.Printf("%s%s%s", yellow, line, reset)
-		}
-
-		fmt.Print(moveCursor(typeRow+1, 1))
-		fmt.Print(clearLine())
-		fmt.Printf("  %s%s%s%s_", white, disp, reset, cyan)
-
-		delay := time.Duration(30+rand.Intn(70)) * time.Millisecond
-		time.Sleep(delay)
+		drawFrame(monkeyFrames[k%2], fmt.Sprintf("%s%s%s_", white, disp, reset))
+		time.Sleep(time.Duration(30+rand.Intn(70)) * time.Millisecond)
 	}
 
-	// Finished typing - show final idea
-	fmt.Print(moveCursor(typeRow+1, 1))
-	fmt.Print(clearLine())
-	fmt.Printf("  %s%s%s ✓", bold+cyan, target, reset)
-
-	// Monkey relaxes
-	frame := monkeyFrames[0]
-	frameLines := strings.Split(frame, "\n")
-	for j, line := range frameLines {
-		if line == "" {
-			continue
-		}
-		fmt.Print(moveCursor(monkeyRow+j, 4))
-		fmt.Print(clearLine())
-		fmt.Printf("%s%s%s", yellow, line, reset)
-	}
-
+	drawFrame(monkeyFrames[0], fmt.Sprintf("%s%s%s", bold+cyan, target, reset))
 	time.Sleep(300 * time.Millisecond)
 }
 
 func showChoices(idea string) string {
-	typeRow := 13
+	fmt.Print(clearScreen)
+	typeRow := 1
 
 	// Draw the full idea box
 	fmt.Print(moveCursor(typeRow+3, 1))
-	fmt.Printf("%s╭────────────────────────────────────────────────────╮%s\n", gray, reset)
+	fmt.Printf("%s+----------------------------------------------------%s\n", gray, reset)
 	fmt.Print(moveCursor(typeRow+4, 1))
 	wrapped := wrapText(idea, 50)
 	for i, line := range wrapped {
 		fmt.Print(moveCursor(typeRow+4+i, 1))
-		fmt.Printf("%s│%s  %-50s  %s│%s\n", gray, bold+white, line, reset, gray+reset)
+		fmt.Printf("%s|%s  %-50s  %s|%s\n", gray, bold+white, line, reset, gray+reset)
 	}
 	extraRows := len(wrapped) - 1
 	fmt.Print(moveCursor(typeRow+5+extraRows, 1))
-	fmt.Printf("%s╰────────────────────────────────────────────────────╯%s\n", gray, reset)
+	fmt.Printf("%s+----------------------------------------------------%s\n", gray, reset)
 
 	fmt.Print(moveCursor(typeRow+7+extraRows, 1))
 	fmt.Printf("%sWhat do you want to do?%s\n\n", dim+white, reset)
@@ -654,15 +545,15 @@ func wrapText(text string, width int) []string {
 func showYesList(list []string) {
 	fmt.Print(clearScreen)
 	fmt.Print(moveCursor(1, 1))
-	fmt.Printf("%s%s YOUR BUILD LIST%s\n", bold+green, "🔨", reset)
+	fmt.Printf("%s YOUR BUILD LIST%s\n", bold+green, reset)
 	fmt.Print(moveCursor(2, 1))
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", gray, reset)
+	fmt.Printf("%s--------------------------------------------------%s\n", gray, reset)
 	for i, item := range list {
 		fmt.Print(moveCursor(3+i, 1))
 		fmt.Printf("  %s%d.%s %s%s%s\n", bold+cyan, i+1, reset, white, item, reset)
 	}
 	fmt.Print(moveCursor(4+len(list), 1))
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", gray, reset)
+	fmt.Printf("%s--------------------------------------------------%s\n", gray, reset)
 }
 
 func showMaybeList(list []string) {
@@ -671,7 +562,7 @@ func showMaybeList(list []string) {
 	}
 	offset := 0
 	fmt.Print(moveCursor(20+offset, 1))
-	fmt.Printf("\n%s%s MAYBE LATER%s\n", dim+yellow, "⏳", reset)
+	fmt.Printf("\n%s MAYBE LATER%s\n", dim+yellow, reset)
 	for _, item := range list {
 		fmt.Printf("  %s- %s%s\n", gray, item, reset)
 	}
