@@ -1,12 +1,14 @@
 package main
 
 import (
-	_ "embed"
 	"bufio"
+	_ "embed"
 	"fmt"
 	"math/rand"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,19 +20,23 @@ var frame2 string
 
 // ANSI escape codes
 const (
-	clearScreen = "\033[2J\033[H"
-	hideCursor  = "\033[?25l"
-	showCursor  = "\033[?25h"
-	bold        = "\033[1m"
-	dim         = "\033[2m"
-	reset       = "\033[0m"
-	green       = "\033[32m"
-	yellow      = "\033[33m"
-	cyan        = "\033[36m"
-	white       = "\033[97m"
-	gray        = "\033[90m"
-	red         = "\033[31m"
-	magenta     = "\033[35m"
+	clearScreen    = "\033[2J\033[H"
+	hideCursor     = "\033[?25l"
+	showCursor     = "\033[?25h"
+	saveCursor     = "\0337"
+	restoreCursor  = "\0338"
+	enterAltScreen = "\033[?1049h"
+	exitAltScreen  = "\033[?1049l"
+	bold           = "\033[1m"
+	dim            = "\033[2m"
+	reset          = "\033[0m"
+	green          = "\033[32m"
+	yellow         = "\033[33m"
+	cyan           = "\033[36m"
+	white          = "\033[97m"
+	gray           = "\033[90m"
+	red            = "\033[31m"
+	magenta        = "\033[35m"
 )
 
 var ideas = []string{
@@ -376,8 +382,6 @@ var ideas = []string{
 	"a web app for coordinating a book club reading schedule",
 }
 
-var monkeyFrames = []string{frame1, frame2}
-
 var charset = "abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz    !!??--"
 
 func randomChar() string {
@@ -392,20 +396,66 @@ func clearLine() string {
 	return "\033[2K"
 }
 
-func drawFrame(frame string, typingLine string) {
-	fmt.Print("\033[H")
-	fmt.Printf("%s THE INFINITE MONKEY%s\r\n", bold+yellow, reset)
-	fmt.Printf("%s--------------------------------------------------%s\r\n", gray, reset)
-	for _, line := range strings.Split(frame, "\n") {
-		fmt.Printf("%s%s%s\r\n", yellow, line, reset)
+// The header occupies rows 1-2; the monkey art starts at row 3.
+const artTopRow = 3
+
+var animFrames = []string{frame1, frame2}
+
+func frameLines(frame string) []string {
+	return strings.Split(strings.TrimRight(frame, "\n"), "\n")
+}
+
+// paintArt redraws just the monkey rows in place (fixed positions), so the two
+// frames can be swapped to animate without clearing and scrolling the screen.
+func paintArt(frame string) {
+	for i, line := range frameLines(frame) {
+		fmt.Print(moveCursor(artTopRow+i, 1))
+		fmt.Print(clearLine())
+		fmt.Printf("%s%s%s", yellow, line, reset)
 	}
-	fmt.Printf("\r\n%s Typing:%s\r\n", gray, reset)
-	fmt.Printf("  %s\r\n", typingLine)
+}
+
+// drawMonkey paints the header and first frame once, then parks the cursor on
+// the (empty) typing line and saves that position so the typing line can be
+// updated in place.
+func drawMonkey() {
+	fmt.Print(clearScreen)
+	fmt.Print(moveCursor(1, 1))
+	fmt.Printf("%s THE INFINITE MONKEY%s", bold+yellow, reset)
+	fmt.Print(moveCursor(2, 1))
+	fmt.Printf("%s--------------------------------------------------%s", gray, reset)
+	paintArt(frame1)
+	n := len(frameLines(frame1))
+	fmt.Print(moveCursor(artTopRow+n+1, 1))
+	fmt.Printf("%s Typing:%s", gray, reset)
+	fmt.Print(moveCursor(artTopRow+n+2, 1))
+	fmt.Print(saveCursor)
+}
+
+// updateTyping rewrites just the typing line in place.
+func updateTyping(line string) {
+	fmt.Print(restoreCursor)
+	fmt.Print(clearLine())
+	fmt.Printf("\r  %s", line)
 }
 
 func animateTyping(target string) {
 	fmt.Print(hideCursor)
-	fmt.Print(clearScreen)
+	drawMonkey()
+
+	// Alternate the two frames as the monkey "types". swap only repaints the
+	// art when the frame actually changes, and updateTyping returns the cursor
+	// to the typing line afterwards.
+	cur := 0
+	step := 0
+	tick := func(line string) {
+		if step%2 != cur {
+			cur = step % 2
+			paintArt(animFrames[cur])
+		}
+		step++
+		updateTyping(line)
+	}
 
 	// Phase 1: chaotic random typing
 	displayed := ""
@@ -419,26 +469,26 @@ func animateTyping(target string) {
 				displayed = displayed[len(displayed)-50:]
 			}
 		}
-		drawFrame(monkeyFrames[i%2], fmt.Sprintf("%s%s%s%s_", dim+gray, displayed, reset, cyan))
+		tick(fmt.Sprintf("%s%s%s%s_", dim+gray, displayed, reset, cyan))
 		time.Sleep(time.Duration(20+rand.Intn(60)) * time.Millisecond)
 	}
 
 	// Phase 2: type the actual idea with occasional typos
 	realTyped := ""
-	for k, ch := range target {
+	for _, ch := range target {
 		if rand.Float32() < 0.08 && len(realTyped) > 0 {
 			preview := realTyped + randomChar()
 			if len(preview) > 55 {
 				preview = "..." + preview[len(preview)-52:]
 			}
-			drawFrame(monkeyFrames[k%2], fmt.Sprintf("%s%s%s_", white, preview, reset))
+			tick(fmt.Sprintf("%s%s%s_", white, preview, reset))
 			time.Sleep(80 * time.Millisecond)
 
 			disp := realTyped
 			if len(disp) > 55 {
 				disp = "..." + disp[len(disp)-52:]
 			}
-			drawFrame(monkeyFrames[k%2], fmt.Sprintf("%s%s%s_", white, disp, reset))
+			tick(fmt.Sprintf("%s%s%s_", white, disp, reset))
 			time.Sleep(60 * time.Millisecond)
 		}
 
@@ -447,11 +497,11 @@ func animateTyping(target string) {
 		if len(disp) > 55 {
 			disp = "..." + disp[len(disp)-52:]
 		}
-		drawFrame(monkeyFrames[k%2], fmt.Sprintf("%s%s%s_", white, disp, reset))
+		tick(fmt.Sprintf("%s%s%s_", white, disp, reset))
 		time.Sleep(time.Duration(30+rand.Intn(70)) * time.Millisecond)
 	}
 
-	drawFrame(monkeyFrames[0], fmt.Sprintf("%s%s%s", bold+cyan, target, reset))
+	updateTyping(fmt.Sprintf("%s%s%s", bold+cyan, target, reset))
 	time.Sleep(300 * time.Millisecond)
 }
 
@@ -571,6 +621,21 @@ func showMaybeList(list []string) {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
+	// Draw on the alternate screen so the animation never pollutes the
+	// terminal's scrollback; the original screen is restored on exit.
+	fmt.Print(enterAltScreen)
+
+	// Restore the terminal if interrupted (Ctrl-C) instead of leaving the
+	// user stranded on the alternate screen with a hidden cursor.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Print(showCursor)
+		fmt.Print(exitAltScreen)
+		os.Exit(0)
+	}()
+
 	// Shuffle ideas
 	rand.Shuffle(len(ideas), func(i, j int) { ideas[i], ideas[j] = ideas[j], ideas[i] })
 
@@ -609,9 +674,10 @@ func main() {
 			// just continue
 
 		case "q":
+			// Leave the alternate screen first so the summary prints on the
+			// real terminal and stays visible after the program exits.
+			fmt.Print(exitAltScreen)
 			fmt.Print(showCursor)
-			fmt.Print(clearScreen)
-			fmt.Print(moveCursor(1, 1))
 			fmt.Printf("%s The monkey takes a break.%s\n\n", bold+yellow, reset)
 
 			if len(yesList) > 0 {
