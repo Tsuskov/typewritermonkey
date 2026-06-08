@@ -50,6 +50,28 @@ go build -o typemonkey monkey.go
 ./typemonkey
 ```
 
+## Installing it globally
+
+Want to type `typemonkey` from any terminal, in any directory? Build it
+straight into a folder that's already on your `PATH`:
+
+```
+mkdir -p ~/.local/bin
+go build -o ~/.local/bin/typemonkey monkey.go
+```
+
+That's it — open a new terminal and run `typemonkey` from anywhere. The
+monkey art is embedded into the binary at build time, so the resulting
+executable is fully self-contained; you don't need to keep this repo around
+afterwards.
+
+If `~/.local/bin` isn't on your `PATH`, add this to your shell config
+(`~/.zshrc` or `~/.bashrc`) and restart your terminal:
+
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 ## Why
 
 Sometimes the hardest part of starting a side project is just picking one.
